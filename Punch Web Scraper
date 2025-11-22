@@ -1,0 +1,26 @@
+#!/bin/bash
+
+BASE_URL="https://umbra.nascom.nasa.gov/punch/3/CIM/2025/08/31/"
+
+# Where to save downloaded files
+DOWNLOAD_DIR="/Users/samnasri/Downloads/PUNCH_20250831"
+
+mkdir -p "$DOWNLOAD_DIR"
+
+echo "Fetching file list from server..."
+
+HTML=$(curl -s "$BASE_URL")
+
+FILES=$(echo "$HTML" | grep -oE 'PUNCH[^"]+\.(fits)')  # Only download .fits files
+
+echo "Found files:"
+echo "$FILES"
+echo
+
+for FILE in $FILES; do
+    echo "Downloading $FILE ..."
+    curl -s -O "$BASE_URL$FILE" --output-dir "$DOWNLOAD_DIR"
+done
+
+echo "Done! Files saved to:"
+echo "$DOWNLOAD_DIR"
