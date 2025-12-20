@@ -4,28 +4,36 @@ set -euo pipefail
 BASE_URL="https://umbra.nascom.nasa.gov/punch/3/CIM/2025/08/31/"
 DOWNLOAD_DIR="/Users/samnasri/Downloads/PUNCH_20250831"
 
-PY_SCRIPT="/Users/samnasri/path/to/process_punch_l3s_min_to_txt.py"
+BIN_SCRIPT="/Users/samnasri/Desktop/Heliophysics/Heliophysics-/punch_min_binning.py"
 
 mkdir -p "$DOWNLOAD_DIR"
 
 echo "Fetching file list from server..."
 HTML="$(curl -fsSL "$BASE_URL")"
 
-mapfile -t FILES < <(echo "$HTML" | grep -oE 'PUNCH[^"]+\.fits' | sort -u)
+FILES=$(echo "$HTML" | grep -oE 'PUNCH[^"]+\.fits' | sort -u)
 
-echo "Found ${#FILES[@]} files."
+NUM_FILES=$(echo "$FILES" | wc -l | tr -d ' ')
+echo "Found $NUM_FILES FITS files."
 echo
 
-for FILE in "${FILES[@]}"; do
-  echo "Downloading $FILE ..."
-  curl -fsSL -o "$DOWNLOAD_DIR/$FILE" "$BASE_URL$FILE"
+for FILE in $FILES; do
+  OUT="$DOWNLOAD_DIR/$FILE"
+  if [[ -f "$OUT" ]]; then
+    echo "Skipping existing file: $FILE"
+  else
+    echo "Downloading $FILE ..."
+    curl -fsSL -o "$OUT" "$BASE_URL$FILE"
+  fi
 done
 
 echo
-echo "Done downloading. Files saved to: $DOWNLOAD_DIR"
+echo "Done downloading. Files saved to:"
+echo "  $DOWNLOAD_DIR"
 echo
 
-echo "Running Python processor on downloaded FITS..."
-python3 "$PY_SCRIPT" "$DOWNLOAD_DIR"/*.fits
+echo "Running Python min-bin processor..."
+python3 "$BIN_SCRIPT" "$DOWNLOAD_DIR"/*.fits
 
+echo
 echo "All done."
