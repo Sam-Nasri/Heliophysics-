@@ -1,26 +1,31 @@
 #!/bin/bash
+set -euo pipefail
 
 BASE_URL="https://umbra.nascom.nasa.gov/punch/3/CIM/2025/08/31/"
-
-# Where to save downloaded files
 DOWNLOAD_DIR="/Users/samnasri/Downloads/PUNCH_20250831"
+
+PY_SCRIPT="/Users/samnasri/path/to/process_punch_l3s_min_to_txt.py"
 
 mkdir -p "$DOWNLOAD_DIR"
 
 echo "Fetching file list from server..."
+HTML="$(curl -fsSL "$BASE_URL")"
 
-HTML=$(curl -s "$BASE_URL")
+mapfile -t FILES < <(echo "$HTML" | grep -oE 'PUNCH[^"]+\.fits' | sort -u)
 
-FILES=$(echo "$HTML" | grep -oE 'PUNCH[^"]+\.(fits)')  # Only download .fits files
-
-echo "Found files:"
-echo "$FILES"
+echo "Found ${#FILES[@]} files."
 echo
 
-for FILE in $FILES; do
-    echo "Downloading $FILE ..."
-    curl -s -O "$BASE_URL$FILE" --output-dir "$DOWNLOAD_DIR"
+for FILE in "${FILES[@]}"; do
+  echo "Downloading $FILE ..."
+  curl -fsSL -o "$DOWNLOAD_DIR/$FILE" "$BASE_URL$FILE"
 done
 
-echo "Done! Files saved to:"
-echo "$DOWNLOAD_DIR"
+echo
+echo "Done downloading. Files saved to: $DOWNLOAD_DIR"
+echo
+
+echo "Running Python processor on downloaded FITS..."
+python3 "$PY_SCRIPT" "$DOWNLOAD_DIR"/*.fits
+
+echo "All done."
