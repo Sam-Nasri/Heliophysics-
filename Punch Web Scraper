@@ -1,39 +1,151 @@
 #!/bin/bash
 set -euo pipefail
 
-BASE_URL="https://umbra.nascom.nasa.gov/punch/3/CIM/2025/08/31/"
-DOWNLOAD_DIR="/Users/samnasri/Downloads/PUNCH_20250831"
+BASE_ROOT="https://umbra.nascom.nasa.gov/punch/3/CIM" # Root URL for L3 CIM
+
+START_DATE="2025-10-30" # (YYYY-MM-DD)
+
+NUM_DAYS=1 # Number of days to fetch
+
+DOWNLOAD_ROOT="$HOME/Downloads/PUNCH_CIM"
 
 BIN_SCRIPT="/Users/samnasri/Desktop/Heliophysics/Heliophysics-/punch_min_binning.py"
 
-mkdir -p "$DOWNLOAD_DIR"
+WINDOW_MINUTES=60 # min map window length (minutes)
 
-echo "Fetching file list from server..."
-HTML="$(curl -fsSL "$BASE_URL")"
+export START_DATE NUM_DAYS BASE_ROOT DOWNLOAD_ROOT BIN_SCRIPT WINDOW_MINUTES
 
-FILES=$(echo "$HTML" | grep -oE 'PUNCH[^"]+\.fits' | sort -u)
+mkdir -p "$DOWNLOAD_ROOT"
 
-NUM_FILES=$(echo "$FILES" | wc -l | tr -d ' ')
-echo "Found $NUM_FILES FITS files."
-echo
+python3 - <<'PY'
+import os, subprocess, glob, re
+from datetime import datetime, timedelta
 
-for FILE in $FILES; do
-  OUT="$DOWNLOAD_DIR/$FILE"
-  if [[ -f "$OUT" ]]; then
-    echo "Skipping existing file: $FILE"
-  else
-    echo "Downloading $FILE ..."
-    curl -fsSL -o "$OUT" "$BASE_URL$FILE"
-  fi
-done
+import requests
+from bs4 import BeautifulSoup
+from astropy.io import fits
+from astropy.time import Time
 
-echo
-echo "Done downloading. Files saved to:"
-echo "  $DOWNLOAD_DIR"
-echo
+START_DATE = os.environ["START_DATE"]
+NUM_DAYS = int(os.environ["NUM_DAYS"])
+BASE_ROOT = os.environ["BASE_ROOT"]
+DOWNLOAD_ROOT = os.environ["DOWNLOAD_ROOT"]
+BIN_SCRIPT = os.environ["BIN_SCRIPT"]
+WINDOW_MINUTES = int(os.environ["WINDOW_MINUTES"])
 
-echo "Running Python min-bin processor..."
-python3 "$BIN_SCRIPT" "$DOWNLOAD_DIR"/*.fits
+def day_url(dt):
+    return f"{BASE_ROOT}/{dt.year:04d}/{dt.month:02d}/{dt.day:02d}/"
 
-echo
-echo "All done."
+def day_dir(dt):
+    return os.path.join(DOWNLOAD_ROOT, f"PUNCH_{dt.year:04d}{dt.month:02d}{dt.day:02d}")
+
+def fetch_file_list(url):
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+    return sorted({
+        a.get("href") for a in soup.find_all("a")
+        if a.get("href", "").endswith(".fits") and "PUNCH" in a.get("href")
+    })
+
+def download_files(url, outdir, files):
+    os.makedirs(outdir, exist_ok=True)
+    for fn in files:
+        outpath = os.path.join(outdir, fn)
+        if os.path.exists(outpath):
+            print(f"  ✓ exists: {fn}")
+            continue
+        print(f"  ↓ downloading: {fn}")
+        r = requests.get(url + fn, timeout=120)
+        r.raise_for_status()
+        with open(outpath, "wb") as f:
+            f.write(r.content)
+
+def run_hourly_minbin(outdir: str):
+    """
+    Group FITS into 60-min windows by DATE-OBS header.
+    Runs punch_min_binning.py once per window, writing txt outputs in outdir.
+    """
+    fits_files = sorted(glob.glob(os.path.join(outdir, "*.fits")))
+    if not fits_files:
+        print(f"  ! No FITS files found in {outdir}")
+        return
+
+    items = []
+
+    for fp in fits_files:
+        try:
+            with fits.open(fp) as hdul:
+                hdr = hdul[0].header
+
+            date_obs = hdr.get("DATE-OBS")
+
+            if date_obs:
+                t = Time(date_obs, format="isot", scale="utc").to_datetime()
+            else:
+                m = re.search(r'_(\d{14})_', os.path.basename(fp))
+                if not m:
+                    print(f"  ! Missing DATE-OBS and no filename timestamp, skipping: {os.path.basename(fp)}")
+                    continue
+                t = datetime.strptime(m.group(1), "%Y%m%d%H%M%S")
+
+            items.append((t, fp))
+
+        except Exception as e:
+            print(f"  ! Error reading {os.path.basename(fp)}: {e}")
+
+    if not items:
+        print(f"  ! No usable DATE-OBS timestamps in {outdir}")
+        return
+
+    items.sort(key=lambda x: x[0])
+
+    def floor_to_hour(dt):
+        return dt.replace(minute=0, second=0, microsecond=0)
+
+    windows = {}
+    for t, fp in items:
+        windows.setdefault(floor_to_hour(t), []).append(fp)
+
+    for wstart in sorted(windows):
+        group = windows[wstart]
+        if not group:
+            continue
+
+        wend = wstart + timedelta(minutes=WINDOW_MINUTES)
+        print(f"  → Min-bin window {wstart.isoformat()} to {wend.isoformat()} ({len(group)} files)")
+
+        subprocess.run(
+            ["python3", BIN_SCRIPT] + group,
+            cwd=outdir,
+            check=True
+        )
+
+start = datetime.fromisoformat(START_DATE)
+
+for i in range(NUM_DAYS):
+    dt = start + timedelta(days=i)
+    url = day_url(dt)
+    outdir = day_dir(dt)
+
+    print("\n==============================")
+    print(f"DAY {i+1}/{NUM_DAYS}: {dt.date().isoformat()}")
+    print(f"URL: {url}")
+    print(f"DIR: {outdir}")
+    print("==============================")
+
+    try:
+        files = fetch_file_list(url)
+        print(f"Found {len(files)} FITS files")
+        download_files(url, outdir, files)
+
+        print("Running hourly (DATE-OBS) min-binning…")
+        run_hourly_minbin(outdir)
+
+    except requests.HTTPError as e:
+        print(f"  ! HTTP error for {url}: {e}")
+    except Exception as e:
+        print(f"  ! Unexpected error for {dt.date().isoformat()}: {e}")
+
+print("\nAll done.")
+PY
