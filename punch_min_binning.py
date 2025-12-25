@@ -57,14 +57,13 @@ def load_fits_data(input_fits):
         return None, None, None, None, None
 
 def process_punch_l3s_min_to_txt(input_fits_list, bin_size_deg=1.0):
-    # --- 1. CONSTANTS ---
-    S10_COEFF = 4.5e-16 
+    S10_COEFF = 4.5e-16 # From Benjamin's calculations
 
     if not input_fits_list:
         print("Error: Input FITS list is empty.")
         return
 
-    # --- 2. INITIALIZE ARRAYS (based on first image) ---
+    # Initialize arrays
     print(f"Initializing process using {os.path.basename(input_fits_list[0])}...")
     
     data_init, t_init, wcs_solar_init, wcs_radec_init, header_init = load_fits_data(input_fits_list[0])
@@ -89,11 +88,11 @@ def process_punch_l3s_min_to_txt(input_fits_list, bin_size_deg=1.0):
     num_x_bins = len(x_bins) - 1
     num_y_bins = len(y_bins) - 1
 
-    # Initialize Storage Arrays (ROWS=Y, COLS=X)
+    # Initialize storage arrays (ROWS=Y, COLS=X)
     min_s10_bin = np.full((num_y_bins, num_x_bins), np.inf, dtype=np.float64)
     min_time_bin = np.full((num_y_bins, num_x_bins), "", dtype='<U30')
     
-    # Store Bin Centers
+    # Store bin centers
     # FIX: Transpose (.T) the result because binned_statistic returns (x,y) but we want (y,x)
     bin_hpln_centers = binned_statistic_2d(
         flat_hpln, flat_hplt, flat_hpln, 
@@ -109,7 +108,7 @@ def process_punch_l3s_min_to_txt(input_fits_list, bin_size_deg=1.0):
     start_timestamp = get_timestamp_from_header(header_init)
     end_timestamp = start_timestamp # Will update in loop
 
-    # --- 3. ITERATE AND FIND MINIMUM ---
+    #Iterate and find minimum
     print(f"Processing {len(input_fits_list)} FITS files...")
 
     for i, input_fits in enumerate(input_fits_list):
@@ -158,7 +157,7 @@ def process_punch_l3s_min_to_txt(input_fits_list, bin_size_deg=1.0):
         min_s10_bin[better_mask] = current_img_min_grid[better_mask]
         min_time_bin[better_mask] = t.to_datetime().isoformat()
 
-    # --- 4. CONVERT TO RA/DEC ---
+    # RA/DEC conversion
     print("Converting grid to RA/DEC...")
 
     res_s10 = min_s10_bin.flatten()
@@ -176,28 +175,23 @@ def process_punch_l3s_min_to_txt(input_fits_list, bin_size_deg=1.0):
     clean_s10 = res_s10[valid_mask]
     clean_time = res_time[valid_mask]
     
-    # --- 5. GENERATE HEADER DATE ---
+    # Generate Header Date
     t_dt = t_init.to_datetime()
     jan1_dt = t_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     jan1_jd = Time(jan1_dt).jd
     doy_fraction = t_init.jd - jan1_jd + 1.0
     header_date_string = f"{t_dt.year} {doy_fraction:.8f}"
 
-    # --- 6. DETERMINE OUTPUT FILENAME ---
     output_filename = f"PUNCH_L3_CIM_RANGE_{start_timestamp}_{end_timestamp}_min_bin.txt"
 
-    # --- 7. SAVE ---
     print(f"Writing {len(clean_s10)} points to {output_filename}...")
     
     with open(output_filename, 'w') as f:
-        # 1. Date Header
         f.write(f"{header_date_string}\n")
         
-        # 2. Data Lines
         # Formatting: L3 (2 spaces) RA (space) DEC (2 spaces) S10 (padded) TIME
         for r, d, b, tm in zip(clean_ra, clean_dec, clean_s10, clean_time):
-            # Using formatting to match your example:
-            # L3  179.38 -31.66  248.02 2025-11-10T10:00:29.292
+            # Ex: L3  179.38 -31.66  248.02 2025-11-10T10:00:29.292
             f.write(f"L3  {r:6.2f} {d:6.2f}  {b:6.2f} {tm}\n")
 
     print("Done.")
