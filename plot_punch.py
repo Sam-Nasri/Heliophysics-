@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import sys
+import numpy as np
 
 def plot_heatmap(filename):
     print(f"Reading {filename}...")
@@ -13,6 +14,10 @@ def plot_heatmap(filename):
     except Exception as e:
         print(f"Error reading file: {e}")
         return
+
+    elong = np.sqrt(df['RA']**2 + df['DEC']**2)
+    elong = np.clip(elong, 1e-6, None)
+    df['Brightness'] = df['Brightness'] * (elong ** 2.3)
 
     # Filter for visualization
     # We create a clipped version for plotting so stars don't wash out the image.
