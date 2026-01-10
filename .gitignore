@@ -6,3 +6,4 @@
 *.fit
 *.fts
 Output Files/
+.vscode/
