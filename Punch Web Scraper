@@ -142,6 +142,9 @@ for i in range(NUM_DAYS):
         print("Running hourly (DATE-OBS) min-binning…")
         run_hourly_minbin(outdir)
 
+        for fp in glob.glob(os.path.join(outdir, "*.fits")):
+            os.remove(fp)
+
     except requests.HTTPError as e:
         print(f"  ! HTTP error for {url}: {e}")
     except Exception as e:

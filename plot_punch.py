@@ -18,6 +18,7 @@ def plot_heatmap(filename):
     elong = np.sqrt(df['RA']**2 + df['DEC']**2)
     elong = np.clip(elong, 1e-6, None)
     df['Brightness'] = df['Brightness'] * (elong ** 2.3)
+    df['Brightness'] = df['Brightness'] * (0.42 / 90.0)
 
     # Filter for visualization
     # We create a clipped version for plotting so stars don't wash out the image.
