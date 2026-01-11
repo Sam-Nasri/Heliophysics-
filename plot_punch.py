@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import sys
 import numpy as np
 import os
+import re
 
 # Output directory for when working on server
 # OUTPUT_DIR = "/home/soft/snasri/scripts/Outputs/plots"
@@ -76,9 +77,14 @@ def plot_heatmap(filename):
     plt.grid(True, linestyle="--", alpha=0.5)
 
     # --- SAVE FIGURE INSTEAD OF SHOWING ---
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    m = re.search(r"PUNCH_(\d{8})", filename)
+    date_tag = m.group(1) if m else "UNKNOWN_DATE"
+
+    day_dir = os.path.join(OUTPUT_DIR, f"PUNCHPLOTS_{date_tag}")
+    os.makedirs(day_dir, exist_ok=True)
+
     base = os.path.splitext(os.path.basename(filename))[0]
-    output_png = os.path.join(OUTPUT_DIR, base + ".jpg")
+    output_png = os.path.join(day_dir, base + ".jpg")
 
     plt.savefig(output_png, dpi=200, bbox_inches="tight", format="jpg")
     plt.close()
